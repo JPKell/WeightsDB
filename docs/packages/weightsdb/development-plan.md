@@ -1,7 +1,7 @@
 # WeightsDB — Development Plan
 
 **Sequence position:** extracted during **LoadCoach Phase 1**, from FreeWeight's in-application
-storage layer. Not built speculatively ([ADR-0011](../../adr/0011-shared-package-boundaries.md)).
+storage layer. Not built speculatively (ADR-0011).
 **Target:** `weightsdb 0.2.0` by the end of Phase 3; FreeWeight adopts it in FreeWeight Phase 12.
 
 **Precondition for starting:** FreeWeight is shipping with a working `freeweight.infrastructure.db`
@@ -26,7 +26,7 @@ identical (not yet swapped).
 * `upsert(session, model, values, *, index_elements)` — the suite's one sanctioned
   `INSERT … ON CONFLICT DO UPDATE`, because select-then-insert is a race under both dialects and a
   hand-written clause is how a dialect-specific variant gets in
-  ([ADR-0006](../../adr/0006-sqlite-and-postgresql-roles.md)).
+  (ADR-0006).
 * Errors: `DatabaseUnavailable`, `StorageBusy`, `SchemaAhead`, `MigrationRequired`,
   `MigrationFailed`.
 * Credential redaction helper used by every error and log path.

@@ -2,8 +2,8 @@
 
 **Type:** Python package · **Import/distribution name:** `weightsdb` · **Layer:** 3 (capability package)
 **Status:** Specified, not implemented. **Extraction timing:** LoadCoach Phase 1, from FreeWeight's
-`freeweight.infrastructure.db` ([ADR-0011](../../adr/0011-shared-package-boundaries.md)).
-**Decision records:** [ADR-0005](../../adr/0005-database-strategy.md), [ADR-0006](../../adr/0006-sqlite-and-postgresql-roles.md).
+`freeweight.infrastructure.db` (ADR-0011).
+**Decision records:** ADR-0005, ADR-0006.
 
 ---
 
@@ -262,4 +262,4 @@ Coverage floor: **95 %**.
 * Query-plan assertion helpers for tests (`assert_uses_index`), currently duplicated in applications.
 * Retention/pruning helpers for high-volume tables (samples, telemetry, events).
 * Optional DuckDB analytics attachment for FreeWeight, if the aggregate budgets are ever missed
-  ([ADR-0006](../../adr/0006-sqlite-and-postgresql-roles.md) revisit trigger).
+  (ADR-0006 revisit trigger).

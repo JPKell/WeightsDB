@@ -40,8 +40,9 @@ dev = [
 ]
 
 [project.urls]
-Documentation = "docs/"
-Changelog = "CHANGELOG.md"
+Homepage = "https://github.com/JPKell/WeightsDB"
+Documentation = "https://github.com/JPKell/WeightsDB/tree/main/docs"
+Changelog = "https://github.com/JPKell/WeightsDB/blob/main/CHANGELOG.md"
 
 [tool.hatch.version]
 path = "src/weightsdb/__about__.py"
