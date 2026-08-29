@@ -1,5 +1,6 @@
 [importlinter]
-root_packages = weightsdb
+root_package = weightsdb
+include_external_packages = True
 
 [importlinter:contract:no-application-imports]
 name = WeightsDB must not import applications
