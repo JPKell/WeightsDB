@@ -42,6 +42,26 @@ def test_health_behind_head() -> None:
     assert any("pending migration" in reason for reason in report.degraded_reasons)
 
 
+def test_health_ahead_of_head() -> None:
+    """A database written by a newer build is reported distinctly from "behind head"."""
+    from sqlalchemy import text
+
+    with temporary_sqlite() as engine:
+        runner = MigrationRunner(engine, script_location=_SCRIPT_LOCATION)
+        runner.upgrade(backup=False)
+        # Simulate a newer build's revision landing in alembic_version directly — Alembic's own
+        # `stamp` command validates against the known script directory and would refuse this,
+        # exactly as it should for a real operator; only a raw write reproduces "ahead" honestly.
+        with engine.connect() as connection:
+            connection.execute(text("UPDATE alembic_version SET version_num = '9999-future'"))
+            connection.commit()
+        report = health_module.database_health(engine, runner)
+    assert report.is_at_head is False
+    assert report.status == "degraded"
+    assert any("ahead of this build" in reason for reason in report.degraded_reasons)
+    assert not any("pending migration" in reason for reason in report.degraded_reasons)
+
+
 def test_health_unmigrated_database_reports_no_current_revision() -> None:
     with temporary_sqlite() as engine:
         runner = MigrationRunner(engine, script_location=_SCRIPT_LOCATION)

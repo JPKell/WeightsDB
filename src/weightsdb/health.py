@@ -270,14 +270,25 @@ def database_health(engine: Engine, runner: MigrationRunner | None = None) -> Da
     current_revision: str | None = None
     head_revision: str | None = None
     is_at_head: bool | None = None
+    is_ahead_of_head = False
     if runner is not None:
         current_revision = runner.current()
         heads = runner.heads()
         head_revision = heads[0] if heads else None
         is_at_head = current_revision == head_revision if head_revision is not None else None
+        is_ahead_of_head = (
+            current_revision is not None
+            and not is_at_head
+            and current_revision not in runner.known_revisions()
+        )
 
     reasons: list[str] = []
-    if is_at_head is False:
+    if is_ahead_of_head:
+        reasons.append(
+            f"database is ahead of this build: at {current_revision!r}, a revision this build's "
+            "migrations do not produce — it was likely written by a newer application version"
+        )
+    elif is_at_head is False:
         reasons.append(f"pending migration: at {current_revision!r}, head is {head_revision!r}")
     if not integrity.ok:
         reasons.append(f"integrity check failed: {integrity.detail}")
