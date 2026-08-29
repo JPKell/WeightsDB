@@ -28,6 +28,7 @@ from weightsdb.errors import (
     StorageBusy,
     StorageFull,
 )
+from weightsdb.health import DatabaseHealth, database_health, is_network_filesystem
 from weightsdb.migrations import MigrationOutcome, MigrationRunner, ParityResult
 from weightsdb.redaction import redact_url
 from weightsdb.session import session_factory, session_scope, transaction
@@ -36,6 +37,7 @@ from weightsdb.types import PortableJSON, UtcDateTime, measurement_columns, ulid
 __all__ = [
     "BackupResult",
     "DatabaseError",
+    "DatabaseHealth",
     "DatabaseUnavailable",
     "IntegrityResult",
     "MigrationFailed",
@@ -53,8 +55,10 @@ __all__ = [
     "backup",
     "checkpoint",
     "create_engine_for",
+    "database_health",
     "database_size_bytes",
     "integrity_check",
+    "is_network_filesystem",
     "measurement_columns",
     "pg_restore_command",
     "redact_url",
