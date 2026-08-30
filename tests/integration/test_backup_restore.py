@@ -39,9 +39,13 @@ _backup_module = import_module("weightsdb.backup")
 
 
 def _seed(engine: Engine) -> None:
+    # `id` is supplied explicitly rather than left to the dialect: SQLite treats
+    # `INTEGER PRIMARY KEY` as a rowid alias and fills it in, PostgreSQL treats it as a plain
+    # NOT NULL column with no default and rejects the row. The seed has to be portable, because
+    # the round-trip test below runs on both.
     with engine.connect() as connection:
         connection.execute(text("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)"))
-        connection.execute(text("INSERT INTO t (name) VALUES ('a')"))
+        connection.execute(text("INSERT INTO t (id, name) VALUES (1, 'a')"))
         connection.commit()
 
 
@@ -242,7 +246,7 @@ def test_backup_and_restore_round_trip_postgresql(tmp_path: Path) -> None:
         assert destination.is_file()
 
         with engine.connect() as connection:
-            connection.execute(text("INSERT INTO t (name) VALUES ('b')"))
+            connection.execute(text("INSERT INTO t (id, name) VALUES (2, 'b')"))
             connection.commit()
 
         # restore() itself refuses on PostgreSQL (spec §11.4); the backup file is exercised via
