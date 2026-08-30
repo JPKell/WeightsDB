@@ -12,7 +12,7 @@ from sqlalchemy import text
 from weightsdb.backup import checkpoint
 from weightsdb.errors import MigrationFailed
 from weightsdb.migrations import MigrationRunner
-from weightsdb.testing import temporary_postgres, temporary_sqlite
+from weightsdb.testing import migration_harness, temporary_postgres, temporary_sqlite
 
 _SCRIPT_LOCATION = str(Path(__file__).parent / "_migration_fixture")
 
@@ -188,3 +188,53 @@ def test_failed_migration_on_postgres_reports_revision_and_refuses(tmp_path: Pat
         assert details["reached_revision"] == "0001"
         assert details["restore_command"] is None
         assert runner.current() == "0001"
+
+
+def test_migration_harness_drives_a_full_upgrade_on_sqlite() -> None:
+    """The helper spec §7 names, exercised by a real consumer for the first time (LC5).
+
+    `migration_harness` bundles a script location and metadata so a consumer's migration tests
+    do not repeat the `MigrationRunner(engine, script_location=...)` construction per test.
+    """
+    harness = migration_harness(_SCRIPT_LOCATION, Base.metadata)
+    assert harness.script_location == _SCRIPT_LOCATION
+    assert harness.metadata is Base.metadata
+
+    with harness.sqlite() as runner:
+        assert runner.current() is None
+        runner.upgrade(backup=False)
+        assert runner.is_at_head()
+        assert runner.check_parity(harness.metadata).matches
+
+
+def test_migration_harness_yields_an_independent_database_each_time() -> None:
+    """Each `sqlite()` block is a fresh temporary database, so tests cannot leak into each other."""
+    harness = migration_harness(_SCRIPT_LOCATION, Base.metadata)
+    with harness.sqlite() as first:
+        first.upgrade(backup=False)
+        assert first.is_at_head()
+    with harness.sqlite() as second:
+        assert second.current() is None, "a second block must not see the first block's schema"
+
+
+def test_migration_harness_postgres_block_runs_the_same_history() -> None:
+    harness = migration_harness(_SCRIPT_LOCATION, Base.metadata)
+    with harness.postgres() as runner:
+        runner.upgrade(backup=False)
+        assert runner.is_at_head()
+
+
+def test_stamp_marks_a_revision_without_running_it() -> None:
+    """Recovery only: the schema is asserted to already match, and no migration is executed."""
+    with temporary_sqlite() as engine:
+        runner = MigrationRunner(engine, script_location=_SCRIPT_LOCATION)
+        runner.stamp("0001")
+        assert runner.current() == "0001"
+        with engine.connect() as connection:
+            tables = {
+                row[0]
+                for row in connection.execute(
+                    text("SELECT name FROM sqlite_master WHERE type='table'")
+                ).fetchall()
+            }
+    assert "widgets" not in tables, "stamp must record the revision, never execute it"

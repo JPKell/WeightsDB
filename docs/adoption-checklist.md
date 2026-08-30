@@ -34,6 +34,11 @@ import freeweight.infrastructure.db.types
 sa.Column("created_at", freeweight.infrastructure.db.types.UtcDateTime(), nullable=False)
 ```
 
+Verified for FreeWeight at the time of writing: all seven revisions, `0001_initial_schema`
+through `0007_capability_evidence`, carry an `import freeweight.infrastructure.db.types` — none is
+exempt. Re-run `grep -rn "db\.types" src/freeweight/infrastructure/db/migrations/versions/` before
+acting on this section, since a revision added after this date would not be covered by that check.
+
 Deleting `types.py` outright breaks every one of those files at import time (Alembic loads the
 full revision history to walk it, not just the target). Two options, in order of preference:
 

@@ -11,8 +11,11 @@ import pytest
 from baseaicore import ValidationError
 from sqlalchemy import Engine, Integer, String
 from sqlalchemy.dialects import sqlite
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from weightsdb.engine import create_engine_for
 from weightsdb.session import session_factory, session_scope
 from weightsdb.testing import temporary_postgres, temporary_sqlite
 from weightsdb.types import PortableJSON, UtcDateTime, measurement_columns, ulid_primary_key, upsert
@@ -203,3 +206,23 @@ def test_upsert_concurrent_writers_produce_one_row_no_error() -> None:
         with session_scope(factory) as session:
             rows = session.query(_Widget).filter_by(name="concurrent").all()
         assert len(rows) == 1
+
+
+def _sqlite_dialect() -> Dialect:
+    """A SQLite dialect object, taken from a real engine so no untyped constructor is called."""
+    return create_engine_for("sqlite://").dialect
+
+
+def test_utc_datetime_round_trips_none_untouched() -> None:
+    """A nullable column's absent value stays None on both legs — never an epoch, never a raise."""
+    column = UtcDateTime()
+    dialect = _sqlite_dialect()
+    assert column.process_bind_param(None, dialect) is None
+    assert column.process_result_value(None, dialect) is None
+
+
+def test_portable_json_becomes_jsonb_on_postgresql_and_plain_json_elsewhere() -> None:
+    """JSONB is what makes indexing and containment queries possible later (ADR-0006)."""
+    postgres = create_engine_for("postgresql+psycopg://u:p@h/db").dialect
+    assert isinstance(PortableJSON().load_dialect_impl(postgres), JSONB)
+    assert not isinstance(PortableJSON().load_dialect_impl(_sqlite_dialect()), JSONB)

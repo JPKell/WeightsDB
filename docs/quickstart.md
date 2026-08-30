@@ -12,6 +12,9 @@ pip install weightsdb
 pip install "weightsdb[postgres]"
 ```
 
+WeightsDB ships a PEP 561 `py.typed` marker, so `mypy --strict` in your own project reads its
+annotations from the installed wheel — no stub package, and no `ignore_missing_imports` entry.
+
 ## 1. Build an engine
 
 ```python

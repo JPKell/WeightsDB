@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import os
+import shutil
 import time
 from pathlib import Path
 
 import pytest
+from sqlalchemy import Engine
 
 from weightsdb import health as health_module
 from weightsdb.backup import IntegrityResult
@@ -184,3 +186,118 @@ def test_network_filesystem_detection_picks_longest_prefix(tmp_path: Path) -> No
         (str(tmp_path / "mnt" / "nfsshare"), "nfs"),
     ]
     assert is_network_filesystem(nested, mounts=mounts) is True
+
+
+def _memory_engine() -> Engine:
+    """A SQLite engine with no file behind it — the `:memory:` branch of every helper."""
+    return create_engine_for("sqlite://")
+
+
+def _postgres_engine() -> Engine:
+    """A PostgreSQL engine that is never connected; construction opens nothing (spec §15)."""
+    return create_engine_for("postgresql+psycopg://u:p@h:5432/db")
+
+
+def test_proc_mounts_unreadable_is_undetermined_not_local(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A platform without a readable /proc/mounts answers "don't know", never "no" (ADR-0016)."""
+
+    def _refuse(*_args: object, **_kwargs: object) -> object:
+        raise OSError("no /proc on this platform")
+
+    monkeypatch.setattr(Path, "open", _refuse)
+    assert health_module._read_proc_mounts() is None
+    assert is_network_filesystem(Path("/srv/data/app.sqlite3")) is None
+
+
+def test_network_filesystem_undetermined_when_no_mount_point_contains_the_path() -> None:
+    """A mount table that simply does not cover the path is undetermined, not "local"."""
+    assert (
+        is_network_filesystem(Path("/srv/data/app.sqlite3"), mounts=[("/mnt/elsewhere", "nfs")])
+        is None
+    )
+
+
+def test_journal_mode_is_none_off_sqlite() -> None:
+    """WAL is a SQLite concept; reporting a journal mode for PostgreSQL would be invented."""
+    assert health_module._journal_mode(_postgres_engine()) is None
+
+
+def test_journal_mode_is_none_when_the_pragma_cannot_run(tmp_path: Path) -> None:
+    """A path that is a directory cannot be opened as a database; report None, do not raise."""
+    engine = create_engine_for(f"sqlite:///{tmp_path}")
+    assert health_module._journal_mode(engine) is None
+
+
+def test_backend_version_is_none_when_the_database_cannot_be_reached() -> None:
+    assert health_module._backend_version(_postgres_engine()) is None
+
+
+def test_free_space_is_none_for_an_in_memory_database() -> None:
+    """An in-memory database has no filesystem to report free space on."""
+    assert health_module._free_space_bytes(_memory_engine()) is None
+
+
+def test_free_space_off_sqlite_reports_the_local_filesystem_as_a_proxy() -> None:
+    """No local path exists for a remote server, so this reports the process's own filesystem."""
+    free = health_module._free_space_bytes(_postgres_engine())
+    assert free is not None
+    assert free > 0
+
+
+def test_free_space_walks_up_to_an_existing_ancestor(tmp_path: Path) -> None:
+    """A database directory that has gone missing still yields the device's free space.
+
+    `create_engine_for` creates the parent up front, so this removes it again afterwards to
+    reach the walk-up: a directory can disappear under a long-lived engine.
+    """
+    engine = create_engine_for(f"sqlite:///{tmp_path}/gone/deeper/app.sqlite3")
+    shutil.rmtree(tmp_path / "gone")
+    free = health_module._free_space_bytes(engine)
+    assert free is not None
+    assert free > 0
+
+
+def test_free_space_is_none_when_the_filesystem_refuses(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _refuse(_path: object) -> object:
+        raise OSError("stat failed")
+
+    monkeypatch.setattr("weightsdb.health.shutil.disk_usage", _refuse)
+    with temporary_sqlite() as engine:
+        assert health_module._free_space_bytes(engine) is None
+
+
+def test_last_backup_age_is_none_off_sqlite_and_in_memory() -> None:
+    """The backups directory is discovered relative to the database *file*; neither has one."""
+    assert health_module._last_backup_age_seconds(_postgres_engine(), now=time.time()) is None
+    assert health_module._last_backup_age_seconds(_memory_engine(), now=time.time()) is None
+
+
+def test_last_backup_age_ignores_subdirectories_of_the_backups_directory(tmp_path: Path) -> None:
+    """Only files are backups. A directory alongside them must not be read as "no backup"."""
+    database = tmp_path / "app.sqlite3"
+    engine = create_engine_for(f"sqlite:///{database}")
+    backups = tmp_path / "backups"
+    (backups / "a-directory").mkdir(parents=True)
+    assert health_module._last_backup_age_seconds(engine, now=time.time()) is None
+
+    (backups / "app-0001.sqlite3").write_bytes(b"")
+    age = health_module._last_backup_age_seconds(engine, now=time.time())
+    assert age is not None
+    assert age >= 0.0
+
+
+def test_network_filesystem_for_is_none_off_sqlite_and_in_memory() -> None:
+    assert health_module._network_filesystem_for(_postgres_engine()) is None
+    assert health_module._network_filesystem_for(_memory_engine()) is None
+
+
+def test_health_on_a_network_filesystem_is_degraded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Database standards: a SQLite file on NFS is a supported-but-degraded deployment."""
+    monkeypatch.setattr(health_module, "_network_filesystem_for", lambda _engine: True)
+    with temporary_sqlite() as engine:
+        report = health_module.database_health(engine)
+    assert report.network_filesystem is True
+    assert report.status == "degraded"
+    assert any("network filesystem" in reason for reason in report.degraded_reasons)

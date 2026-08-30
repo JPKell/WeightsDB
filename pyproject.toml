@@ -84,5 +84,5 @@ source = ["src/weightsdb"]
 branch = true
 
 [tool.coverage.report]
-fail_under = 85
+fail_under = 95
 show_missing = true

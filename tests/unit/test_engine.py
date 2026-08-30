@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import Engine, text
+from sqlalchemy.exc import OperationalError as SAOperationalError
+from sqlalchemy.pool import QueuePool
 
-from weightsdb.engine import create_engine_for
+from weightsdb.engine import _raise_if_busy, create_engine_for
 from weightsdb.errors import DatabaseError, StorageBusy
 from weightsdb.testing import temporary_postgres, temporary_sqlite
 
@@ -116,3 +120,93 @@ def test_postgresql_settings_reapplied_after_forced_reconnect() -> None:
     finally:
         engine.dispose()
     assert application_name == "weightsdb-test"
+
+
+class _RecordingCursor:
+    """A DBAPI cursor that records the statements the connect listener issues."""
+
+    def __init__(self, log: list[tuple[str, object]]) -> None:
+        self._log = log
+
+    def execute(self, statement: str, parameters: object = None) -> None:
+        self._log.append((statement, parameters))
+
+    def close(self) -> None:
+        return None
+
+
+class _RecordingConnection:
+    """The minimum DBAPI surface weightsdb's own connect listener touches."""
+
+    def __init__(self) -> None:
+        self.log: list[tuple[str, object]] = []
+        self.isolation_level: object = "unset"
+
+    def cursor(self) -> _RecordingCursor:
+        return _RecordingCursor(self.log)
+
+
+def _weightsdb_connect_listener(engine: Engine) -> Callable[[object, object], None]:
+    """Return the ``connect`` listener weightsdb itself registered on ``engine``.
+
+    The dialect registers listeners of its own that would try to talk to a real server; this
+    picks out ours so the statements it issues can be asserted without one.
+    """
+    for listener in engine.pool.dispatch.connect:
+        if getattr(listener, "__module__", None) == "weightsdb.engine":
+            return cast("Callable[[object, object], None]", listener)
+    raise AssertionError("weightsdb registered no connect listener on this engine")
+
+
+def test_postgresql_pool_size_is_passed_through() -> None:
+    """`pool_size` is a PostgreSQL-only knob — SQLite's pool does not take one."""
+    engine = create_engine_for("postgresql+psycopg://u:p@h:5432/db", pool_size=7)
+    assert cast("QueuePool", engine.pool).size() == 7
+
+
+def test_postgresql_connect_listener_sets_timeouts_and_application_name() -> None:
+    """The values go through `set_config`, not `SET ... = %s`, which is a syntax error at "$1"."""
+    engine = create_engine_for(
+        "postgresql+psycopg://u:p@h:5432/db",
+        statement_timeout_ms=30_000,
+        application_name="weightsdb-tests",
+    )
+    connection = _RecordingConnection()
+    _weightsdb_connect_listener(engine)(connection, None)
+
+    assert connection.log == [
+        ("SELECT set_config('statement_timeout', %s, false)", ("30000",)),
+        ("SELECT set_config('lock_timeout', %s, false)", ("30000",)),
+        ("SELECT set_config('application_name', %s, false)", ("weightsdb-tests",)),
+    ]
+
+
+def test_postgresql_connect_listener_issues_nothing_when_nothing_is_configured() -> None:
+    """An unconfigured engine must not silently impose a timeout the caller never asked for."""
+    engine = create_engine_for("postgresql+psycopg://u:p@h:5432/db")
+    connection = _RecordingConnection()
+    _weightsdb_connect_listener(engine)(connection, None)
+    assert connection.log == []
+
+
+def test_sqlite_connect_listener_hands_transaction_control_to_sqlalchemy() -> None:
+    """`isolation_level = None` is what stops pysqlite opening a transaction of its own."""
+    engine = create_engine_for("sqlite://")
+    connection = _RecordingConnection()
+    _weightsdb_connect_listener(engine)(connection, None)
+
+    assert connection.isolation_level is None
+    assert [statement for statement, _ in connection.log] == [
+        "PRAGMA foreign_keys=ON",
+        "PRAGMA journal_mode=WAL",
+        "PRAGMA busy_timeout=5000",
+        "PRAGMA synchronous=NORMAL",
+    ]
+
+
+def test_a_non_busy_operational_error_at_begin_is_not_miscast_as_contention() -> None:
+    """`_raise_if_busy` re-raises anything that is not SQLITE_BUSY, unchanged."""
+    original = SAOperationalError("BEGIN IMMEDIATE", None, Exception("syntax error"))
+    with pytest.raises(SAOperationalError) as caught:
+        _raise_if_busy(original, busy_timeout_ms=5000)
+    assert caught.value is original
