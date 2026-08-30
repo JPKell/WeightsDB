@@ -37,7 +37,22 @@ packaging and release standards §3.
   nothing in this package reads; `weightsdb.testing.temporary_postgres` reads
   `WEIGHTSDB_POSTGRES_URL` and otherwise falls back to its own default. With
   `WEIGHTSDB_REQUIRE_POSTGRES=1` the fallback is a hard failure rather than a skip, so the job had
-  never exercised PostgreSQL at all.
+  never exercised PostgreSQL at all. The service container's user, password and database now match
+  the documented default URL, and the job sets `WEIGHTSDB_POSTGRES_URL` explicitly rather than
+  relying on that default.
+- **The PostgreSQL round-trip no longer fails on client/server version skew.** `pg_restore` exits 1
+  for warnings unrelated to the data — a client newer than the server emits
+  `SET transaction_timeout = 0`, which an older server rejects and reports as "errors ignored on
+  restore" — so the test asserted an exit code where its actual claim is that the rows come back.
+  It now checks the restored rows and attaches `pg_restore`'s stderr when they are wrong. A missing
+  `pg_dump` skips the test the way a missing `pg_restore` already did, instead of failing inside
+  `backup()`.
+- **`test_restore_reports_a_backup_it_cannot_open` skips when running as root.** `chmod 000` does
+  not make a file unreadable to root, so the open succeeds and the corruption branch answers
+  instead — a failure that says nothing about the code. CI runs as an ordinary user; a container
+  run as root no longer reports it as a defect.
+- The `dev` extra moves to `pytest>=9.0.3,<10`, matching BaseAiCore, SetSpec, ModelRack and
+  SweatMeter: PYSEC-2026-1845 affects pytest through 9.0.2 and failed the security job.
 - **The backup tests' table seed was not dialect-portable.** `INSERT INTO t (name) …` relies on
   SQLite treating `INTEGER PRIMARY KEY` as a rowid alias; PostgreSQL rejects the row with a
   NOT NULL violation. The id is now supplied explicitly, so the round-trip test can actually run

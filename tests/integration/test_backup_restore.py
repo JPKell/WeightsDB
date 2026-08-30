@@ -238,6 +238,8 @@ def test_pg_restore_command_names_host_port_user_and_database() -> None:
 
 
 def test_backup_and_restore_round_trip_postgresql(tmp_path: Path) -> None:
+    if shutil.which("pg_dump") is None:
+        pytest.skip("pg_dump is not installed; backup() cannot produce an archive to verify")
     with temporary_postgres() as engine:
         _seed(engine)
         destination = tmp_path / "backup.dump"
@@ -255,15 +257,24 @@ def test_backup_and_restore_round_trip_postgresql(tmp_path: Path) -> None:
         if not pg_restore_available:
             pytest.skip("pg_restore is not installed; backup() output cannot be verified")
         restore_command = pg_restore_command(engine, destination)
-        subprocess.run(  # noqa: S603
+        # `check=False` on purpose: the claim under test is that the archive restores the data,
+        # and pg_restore exits 1 for warnings that have nothing to do with that. A client newer
+        # than the server emits settings the server does not know — `SET transaction_timeout = 0`
+        # from a 17 client against a 16 server — reports "errors ignored on restore", and exits 1
+        # with the table restored correctly. The row assertion below is the real check, and it
+        # fails loudly (with stderr attached) if the restore genuinely did not happen.
+        completed = subprocess.run(  # noqa: S603
             [*shlex.split(restore_command)],
-            check=True,
+            check=False,
             capture_output=True,
             env={**os.environ, "PGPASSWORD": engine.url.password or ""},
         )
         with engine.connect() as connection:
             names = sorted(row[0] for row in connection.execute(text("SELECT name FROM t")))
-        assert names == ["a"]
+        assert names == ["a"], (
+            f"pg_restore exited {completed.returncode}: "
+            f"{completed.stderr.decode(errors='replace').strip()}"
+        )
 
 
 def _postgres_engine() -> Engine:
@@ -510,6 +521,12 @@ def test_restore_puts_the_original_back_when_the_restored_file_fails_verificatio
 
 def test_restore_reports_a_backup_it_cannot_open(tmp_path: Path) -> None:
     """A backup file the process may not read is reported as such, not as a corrupt one."""
+    if os.geteuid() == 0:
+        # Root bypasses the permission bits, so `chmod 000` does not make the file unreadable:
+        # the open succeeds and the corruption branch reports it instead. The distinction this
+        # test exists to prove cannot be staged as root. CI runs as an ordinary user; a container
+        # run as root would otherwise report a failure that says nothing about the code.
+        pytest.skip("cannot stage an unreadable file as root")
     unreadable = tmp_path / "unreadable.sqlite3"
     unreadable.write_bytes(b"SQLite format 3\x00")
     unreadable.chmod(0o000)
