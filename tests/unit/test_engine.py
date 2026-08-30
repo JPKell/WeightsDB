@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 from typing import cast
@@ -11,7 +12,7 @@ from sqlalchemy import Engine, text
 from sqlalchemy.exc import OperationalError as SAOperationalError
 from sqlalchemy.pool import QueuePool
 
-from weightsdb.engine import _raise_if_busy, create_engine_for
+from weightsdb.engine import READ_ONLY_EXECUTION_OPTION, _raise_if_busy, create_engine_for
 from weightsdb.errors import DatabaseError, StorageBusy
 from weightsdb.testing import temporary_postgres, temporary_sqlite
 
@@ -210,3 +211,63 @@ def test_a_non_busy_operational_error_at_begin_is_not_miscast_as_contention() ->
     with pytest.raises(SAOperationalError) as caught:
         _raise_if_busy(original, busy_timeout_ms=5000)
     assert caught.value is original
+
+
+class _BeginConnection:
+    """The minimum connection surface weightsdb's own "begin" listener touches."""
+
+    def __init__(
+        self, options: dict[str, object], *, fails_with: tuple[str, BaseException] | None = None
+    ) -> None:
+        self._options = options
+        self._fails_with = fails_with
+        self.log: list[str] = []
+
+    def get_execution_options(self) -> dict[str, object]:
+        return self._options
+
+    def exec_driver_sql(self, statement: str) -> None:
+        self.log.append(statement)
+        if self._fails_with is not None and statement == self._fails_with[0]:
+            raise SAOperationalError(statement, None, self._fails_with[1])
+
+
+def _weightsdb_begin_listener(engine: Engine) -> Callable[[object], None]:
+    """Return the ``begin`` listener weightsdb itself registered on ``engine``."""
+    for listener in engine.dispatch.begin:
+        if getattr(listener, "__module__", None) == "weightsdb.engine":
+            return cast("Callable[[object], None]", listener)
+    raise AssertionError("weightsdb registered no begin listener on this engine")
+
+
+def test_a_read_only_transaction_that_loses_the_race_also_raises_storage_busy() -> None:
+    """A deferred BEGIN contends far less than BEGIN IMMEDIATE, but it can still lose.
+
+    When it does, the reader gets the same typed StorageBusy the writer path gives (spec §13) —
+    driving the listener directly because provoking a busy *deferred* BEGIN against a real file
+    would mean holding an exclusive lock from another process.
+    """
+    engine = create_engine_for("sqlite://", sqlite_busy_timeout_ms=250)
+    locked = sqlite3.OperationalError("database is locked")
+    locked.sqlite_errorcode = sqlite3.SQLITE_BUSY
+    connection = _BeginConnection({READ_ONLY_EXECUTION_OPTION: True}, fails_with=("BEGIN", locked))
+
+    with pytest.raises(StorageBusy) as excinfo:
+        _weightsdb_begin_listener(engine)(connection)
+
+    assert excinfo.value.details["busy_timeout_ms"] == 250
+    assert connection.log == ["PRAGMA query_only=ON", "BEGIN"]
+
+
+def test_a_read_only_transaction_that_is_not_busy_re_raises_unchanged() -> None:
+    """`query_only` is still set first, so the reader cannot write even if BEGIN then fails."""
+    engine = create_engine_for("sqlite://")
+    connection = _BeginConnection(
+        {READ_ONLY_EXECUTION_OPTION: True},
+        fails_with=("BEGIN", Exception("disk I/O error")),
+    )
+
+    with pytest.raises(SAOperationalError):
+        _weightsdb_begin_listener(engine)(connection)
+
+    assert connection.log == ["PRAGMA query_only=ON", "BEGIN"]

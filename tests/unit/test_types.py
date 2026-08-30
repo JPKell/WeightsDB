@@ -6,14 +6,15 @@ import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 import pytest
 from baseaicore import ValidationError
-from sqlalchemy import Engine, Integer, String
+from sqlalchemy import Engine, Integer, String, create_mock_engine
 from sqlalchemy.dialects import sqlite
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine.interfaces import Dialect
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from weightsdb.engine import create_engine_for
 from weightsdb.session import session_factory, session_scope
@@ -226,3 +227,16 @@ def test_portable_json_becomes_jsonb_on_postgresql_and_plain_json_elsewhere() ->
     postgres = create_engine_for("postgresql+psycopg://u:p@h/db").dialect
     assert isinstance(PortableJSON().load_dialect_impl(postgres), JSONB)
     assert not isinstance(PortableJSON().load_dialect_impl(_sqlite_dialect()), JSONB)
+
+
+def test_upsert_refuses_a_dialect_that_is_neither_sqlite_nor_postgresql() -> None:
+    """Only these two dialects are supported (database standards §2); a third needs an ADR."""
+    mock = cast("Engine", create_mock_engine("mysql://", lambda *_a, **_kw: None))
+    with Session(bind=mock) as session:
+        with pytest.raises(ValueError, match="sqlite and postgresql only"):
+            upsert(
+                session,
+                _Widget,
+                {"name": "g", "created_at": datetime.now(UTC)},
+                index_elements=["name"],
+            )

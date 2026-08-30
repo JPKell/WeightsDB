@@ -7,6 +7,13 @@ packaging and release standards §3.
 
 ## [Unreleased]
 
+### Fixed
+- **Coverage fell below the 95 % floor on Python 3.12 (94.89 %).** The uncovered lines were real
+  gaps, not measurement noise: `upsert`'s documented refusal of a third dialect, the `StorageBusy`
+  translation on a *read-only* `BEGIN`, `temporary_postgres`'s `WEIGHTSDB_REQUIRE_POSTGRES=1`
+  failure path, longest-prefix mount selection against an unsorted mount table, and two backups
+  sharing an mtime. Each now has a test; the floor is met on 3.12, 3.13 and 3.14 with margin.
+
 ## [0.2.0] — 2026-08-29
 
 ### Added

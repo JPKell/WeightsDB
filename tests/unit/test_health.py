@@ -301,3 +301,31 @@ def test_health_on_a_network_filesystem_is_degraded(monkeypatch: pytest.MonkeyPa
     assert report.network_filesystem is True
     assert report.status == "degraded"
     assert any("network filesystem" in reason for reason in report.degraded_reasons)
+
+
+def test_network_filesystem_detection_when_the_mount_table_is_not_sorted(tmp_path: Path) -> None:
+    """/proc/mounts is in mount order, not path order: a later, shallower entry must not win."""
+    nested = tmp_path / "mnt" / "nfsshare" / "db.sqlite3"
+    mounts = [
+        (str(tmp_path / "mnt" / "nfsshare"), "nfs"),
+        (str(tmp_path), "ext4"),
+        ("/", "ext4"),
+    ]
+    assert is_network_filesystem(nested, mounts=mounts) is True
+
+
+def test_last_backup_age_with_two_backups_written_at_the_same_instant(tmp_path: Path) -> None:
+    """Equal mtimes: neither displaces the other, and the age is that shared instant's age."""
+    database = tmp_path / "app.sqlite3"
+    engine = create_engine_for(f"sqlite:///{database}")
+    backups = tmp_path / "backups"
+    backups.mkdir()
+    now = time.time()
+    for name in ("app-0001.sqlite3", "app-0002.sqlite3"):
+        path = backups / name
+        path.write_bytes(b"")
+        os.utime(path, (now - 60.0, now - 60.0))
+
+    age = health_module._last_backup_age_seconds(engine, now=now)
+
+    assert age == pytest.approx(60.0, abs=1.0)
