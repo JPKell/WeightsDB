@@ -32,6 +32,26 @@ def test_fresh_database_migrates_to_head_sqlite() -> None:
         assert columns == {"id", "name", "note"}
 
 
+def test_the_default_version_table_name_is_a_contract() -> None:
+    """The revision lives in ``alembic_version`` unless a consumer says otherwise.
+
+    Both applications' shipped databases record their revision under the default name
+    (FreeWeight P12's named failure mode): a changed default would make every existing consumer
+    database look unmigrated — so the default is pinned here, in WeightsDB itself, not only in
+    its consumers' suites.
+    """
+    with temporary_sqlite() as engine:
+        MigrationRunner(engine, script_location=_SCRIPT_LOCATION).upgrade(backup=False)
+        with engine.connect() as connection:
+            tables = {
+                row[0]
+                for row in connection.execute(
+                    text("SELECT name FROM sqlite_master WHERE type='table'")
+                )
+            }
+    assert "alembic_version" in tables
+
+
 def test_fresh_database_migrates_to_head_postgres() -> None:
     with temporary_postgres() as engine:
         runner = MigrationRunner(engine, script_location=_SCRIPT_LOCATION)
