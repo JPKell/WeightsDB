@@ -7,12 +7,16 @@ packaging and release standards §3.
 
 ## [Unreleased]
 
-### Fixed
-- **Coverage fell below the 95 % floor on Python 3.12 (94.89 %).** The uncovered lines were real
-  gaps, not measurement noise: `upsert`'s documented refusal of a third dialect, the `StorageBusy`
-  translation on a *read-only* `BEGIN`, `temporary_postgres`'s `WEIGHTSDB_REQUIRE_POSTGRES=1`
-  failure path, longest-prefix mount selection against an unsorted mount table, and two backups
-  sharing an mtime. Each now has a test; the floor is met on 3.12, 3.13 and 3.14 with margin.
+## [0.2.1] — 2026-08-31
+
+### Added
+- **SQLite connections now set `PRAGMA secure_delete=ON`** alongside the existing per-connection
+  pragmas. `secure_delete` defaults to whatever the host's SQLite build chose, so whether a
+  deleted row's content was actually overwritten on disk varied by machine — and a consumer's
+  retention scrub is a promise about the disk, not about the schema (the M4 handoff's
+  "WeightsDB 0.2.1" item, raised by LoadCoach's retention verification). The pragma is applied
+  by the same `connect` listener as the rest, so a pool reconnect keeps it, and the test observes
+  it on a live connection rather than trusting the connect string.
 
 ## [0.2.0] — 2026-08-29
 
@@ -34,6 +38,14 @@ packaging and release standards §3.
 - SQLite lock contention beyond `busy_timeout` now raises the typed `StorageBusy` instead of a raw
   `sqlalchemy.exc.OperationalError` — a gap in the code this package was extracted from, invisible
   with one consumer and no test for it.
+- `database_health()` no longer conflates a database *ahead of head* with a *pending migration*:
+  any `current != head` read as "pending migration", which is actively misleading when the
+  database was written by a newer build. Phase 3's own test list names the two as distinct cases.
+- **Coverage fell below the 95 % floor on Python 3.12 (94.89 %).** The uncovered lines were real
+  gaps, not measurement noise: `upsert`'s documented refusal of a third dialect, the `StorageBusy`
+  translation on a *read-only* `BEGIN`, `temporary_postgres`'s `WEIGHTSDB_REQUIRE_POSTGRES=1`
+  failure path, longest-prefix mount selection against an unsorted mount table, and two backups
+  sharing an mtime. Each now has a test; the floor is met on 3.12, 3.13 and 3.14 with margin.
 - **`psycopg[binary]` is now part of the `dev` extra.** Seventeen tests assert dialect-specific
   behaviour by building a `postgresql://` engine — no server involved — which SQLAlchemy cannot do
   without an importable DBAPI. Every environment that installed `[dev]` alone failed them with

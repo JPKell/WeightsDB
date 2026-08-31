@@ -2,8 +2,8 @@
 
 **Type:** Python package · **Import/distribution name:** `weightsdb` · **Layer:** 3 (capability package)
 **Status:** Specified, not implemented. **Extraction timing:** LoadCoach Phase 1, from FreeWeight's
-`freeweight.infrastructure.db` (ADR-0011).
-**Decision records:** ADR-0005, ADR-0006.
+`freeweight.infrastructure.db` ([ADR-0011](../../adr/0011-shared-package-boundaries.md)).
+**Decision records:** [ADR-0005](../../adr/0005-database-strategy.md), [ADR-0006](../../adr/0006-sqlite-and-postgresql-roles.md).
 
 ---
 
@@ -40,7 +40,7 @@ mechanics are shared.
 | Responsibility | Detail |
 |---|---|
 | Engine | `create_engine_for(url, …)` applying dialect-correct settings and pooling |
-| SQLite settings | `foreign_keys=ON`, `journal_mode=WAL`, `busy_timeout`, `synchronous=NORMAL`, applied per connection |
+| SQLite settings | `foreign_keys=ON`, `journal_mode=WAL`, `busy_timeout`, `synchronous=NORMAL`, `secure_delete=ON`, applied per connection |
 | PostgreSQL settings | `statement_timeout`, `lock_timeout`, application name, schema selection |
 | Sessions | `session_factory`, `session_scope()` context manager with commit/rollback semantics |
 | Transactions | `transaction(session)` including `BEGIN IMMEDIATE` on SQLite |
@@ -262,4 +262,4 @@ Coverage floor: **95 %**.
 * Query-plan assertion helpers for tests (`assert_uses_index`), currently duplicated in applications.
 * Retention/pruning helpers for high-volume tables (samples, telemetry, events).
 * Optional DuckDB analytics attachment for FreeWeight, if the aggregate budgets are ever missed
-  (ADR-0006 revisit trigger).
+  ([ADR-0006](../../adr/0006-sqlite-and-postgresql-roles.md) revisit trigger).

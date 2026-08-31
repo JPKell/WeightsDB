@@ -30,6 +30,19 @@ def test_sqlite_pragmas_applied_on_fresh_connection() -> None:
     assert pragmas["journal_mode"] == "wal"
 
 
+def test_sqlite_secure_delete_is_on_for_every_connection() -> None:
+    """A retention scrub must mean the same thing on every machine.
+
+    ``secure_delete`` defaults to whatever the host's SQLite build chose, so whether deleted
+    content is actually overwritten on disk would otherwise vary by machine (the M4 handoff's
+    WeightsDB 0.2.1 item). Observed on a live connection, not trusted from the connect string.
+    """
+    with temporary_sqlite() as engine:
+        with engine.connect() as connection:
+            secure_delete = connection.execute(text("PRAGMA secure_delete")).scalar_one()
+    assert secure_delete == 1
+
+
 def test_sqlite_pragmas_applied_after_forced_reconnect() -> None:
     """A pool recycle must not silently drop the pragmas (spec §7, §11.1)."""
     with temporary_sqlite() as engine:
@@ -44,8 +57,10 @@ def test_sqlite_pragmas_applied_after_forced_reconnect() -> None:
             connection.rollback()
             foreign_keys = connection.execute(text("PRAGMA foreign_keys")).scalar_one()
             journal_mode = connection.execute(text("PRAGMA journal_mode")).scalar_one()
+            secure_delete = connection.execute(text("PRAGMA secure_delete")).scalar_one()
     assert foreign_keys == 1
     assert journal_mode == "wal"
+    assert secure_delete == 1
 
 
 def test_sqlite_busy_timeout_raises_storage_busy() -> None:
@@ -202,6 +217,7 @@ def test_sqlite_connect_listener_hands_transaction_control_to_sqlalchemy() -> No
         "PRAGMA journal_mode=WAL",
         "PRAGMA busy_timeout=5000",
         "PRAGMA synchronous=NORMAL",
+        "PRAGMA secure_delete=ON",
     ]
 
 

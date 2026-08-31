@@ -1,7 +1,8 @@
 """weightsdb.engine — dialect-correct engine construction.
 
 Database standards §2: SQLite gets ``foreign_keys=ON``, ``journal_mode=WAL``, ``busy_timeout``,
-``synchronous=NORMAL``, applied per connection so a pool reconnect never silently loses them;
+``synchronous=NORMAL``, ``secure_delete=ON``, applied per connection so a pool reconnect never
+silently loses them;
 PostgreSQL gets ``statement_timeout``, ``lock_timeout`` and ``application_name``. Only these two
 dialects are supported (§2) — a third requires an ADR, not a code change here.
 
@@ -168,6 +169,11 @@ def _configure_sqlite(engine: Engine, *, busy_timeout_ms: int) -> None:
             cursor.execute("PRAGMA journal_mode=WAL")
             cursor.execute(f"PRAGMA busy_timeout={int(busy_timeout_ms)}")
             cursor.execute("PRAGMA synchronous=NORMAL")
+            # secure_delete defaults to whatever the host's SQLite build chose, so whether a
+            # deleted row's content is actually overwritten on disk would otherwise vary by
+            # machine — and a consumer's retention scrub is a promise about the disk, not about
+            # the schema. Set explicitly so the scrub means the same thing everywhere.
+            cursor.execute("PRAGMA secure_delete=ON")
         finally:
             cursor.close()
 
