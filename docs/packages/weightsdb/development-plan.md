@@ -3,6 +3,8 @@
 **Sequence position:** extracted during **LoadCoach Phase 1**, from FreeWeight's in-application
 storage layer. Not built speculatively ([ADR-0011](../../adr/0011-shared-package-boundaries.md)).
 **Target:** `weightsdb 0.2.0` by the end of Phase 3; FreeWeight adopts it in FreeWeight Phase 12.
+**Reached; `0.2.1` is published** and is what FreeWeight, LoadCoach, IdeaPress and PromptCadence
+all run on.
 
 **Precondition for starting:** FreeWeight is shipping with a working `freeweight.infrastructure.db`
 that has already been through real migrations, and LoadCoach needs the same mechanics. Two consumers

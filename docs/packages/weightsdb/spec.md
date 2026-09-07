@@ -1,8 +1,10 @@
 # WeightsDB — Specification
 
 **Type:** Python package · **Import/distribution name:** `weightsdb` · **Layer:** 3 (capability package)
-**Status:** Specified, not implemented. **Extraction timing:** LoadCoach Phase 1, from FreeWeight's
-`freeweight.infrastructure.db` ([ADR-0011](../../adr/0011-shared-package-boundaries.md)).
+**Status:** Implemented and published as `weightsdb 0.2.1`. **Extracted at:** LoadCoach Phase 1,
+from FreeWeight's `freeweight.infrastructure.db`
+([ADR-0011](../../adr/0011-shared-package-boundaries.md)); adopted by FreeWeight at its Phase 12,
+and by PromptCadence at its Phase 1.
 **Decision records:** [ADR-0005](../../adr/0005-database-strategy.md), [ADR-0006](../../adr/0006-sqlite-and-postgresql-roles.md).
 
 ---
@@ -57,7 +59,7 @@ PostgreSQL.
 
 ## 6. Consumers
 
-FreeWeight, LoadCoach, IdeaPress. (Extracted only once the second consumer exists.)
+FreeWeight, LoadCoach, IdeaPress, PromptCadence. (Extracted only once the second consumer existed.)
 
 ## 7. Public API
 
