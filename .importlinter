@@ -10,6 +10,7 @@ forbidden_modules =
     freeweight
     loadcoach
     ideapress
+    promptcadence
 
 [importlinter:contract:no-sibling-packages]
 name = WeightsDB must not import sibling capability packages
@@ -19,3 +20,7 @@ forbidden_modules =
     modelrack
     sweatmeter
     mirrorwall
+    loadledger
+    cutctx
+    toolyard
+    commissioner
