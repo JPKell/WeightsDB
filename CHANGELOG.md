@@ -7,6 +7,17 @@ packaging and release standards §3.
 
 ## [Unreleased]
 
+### Added
+
+- `tests/unit/test_readme_version.py` — asserts the version README.md states after its `Status:`
+  line equals `__about__.__version__`, so a release cannot leave the README stale (M9 re-audit,
+  row L7).
+
+### Fixed
+
+- README's `Status:` line named no version at all; it now states `0.2.1` (the current
+  `__about__` version), following the same convention as MirrorWall's.
+
 ## [0.2.1] — 2026-08-31
 
 ### Added

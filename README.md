@@ -2,7 +2,7 @@
 
 Shared SQLAlchemy + Alembic plumbing: engines, sessions, pragmas, migrations, backup and health. No application table, no shared schema.
 
-**Status:** Phases 1–3 complete — engine, sessions, types, migrations, backup/restore and health
+**Status:** Phases 1–3 complete at `0.2.1` — engine, sessions, types, migrations, backup/restore and health
 are implemented and tested on SQLite (PostgreSQL exercised wherever a server is configured; see
 [docs/packages/weightsdb/development-plan.md](docs/packages/weightsdb/development-plan.md)).
 Extracted from FreeWeight's `infrastructure.db` per ADR-0011; FreeWeight itself adopts this package
