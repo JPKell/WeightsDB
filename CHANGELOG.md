@@ -7,6 +7,11 @@ packaging and release standards §3.
 
 ## [Unreleased]
 
+### Changed
+- Internal tightening with no behavioural change: `upsert` builds one dialect-specific `INSERT`
+  and applies the conflict clause once; the health helpers share one "SQLite file behind this
+  engine" lookup and pick the longest containing mount point with `max`.
+
 ### Added
 
 - `tests/unit/test_readme_version.py` — asserts the version README.md states after its `Status:`

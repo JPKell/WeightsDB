@@ -136,19 +136,15 @@ def is_network_filesystem(
     if not entries:
         return None
     resolved = path.absolute()
-    best_match: str | None = None
-    best_depth = -1
-    for mount_point, fs_type in entries:
-        mount_path = Path(mount_point)
-        if mount_path != resolved and mount_path not in resolved.parents:
-            continue
-        depth = len(mount_path.parts)
-        if depth > best_depth:
-            best_depth = depth
-            best_match = fs_type
-    if best_match is None:
+    containing = [
+        (Path(mount_point), fs_type)
+        for mount_point, fs_type in entries
+        if Path(mount_point) == resolved or Path(mount_point) in resolved.parents
+    ]
+    if not containing:
         return None
-    return best_match.lower() in _NETWORK_FILESYSTEM_TYPES
+    _mount, fs_type = max(containing, key=lambda entry: len(entry[0].parts))
+    return fs_type.lower() in _NETWORK_FILESYSTEM_TYPES
 
 
 def _backend_version(engine: Engine) -> str | None:
@@ -171,13 +167,21 @@ def _journal_mode(engine: Engine) -> str | None:
         return None
 
 
+def _sqlite_file(engine: Engine) -> Path | None:
+    """Return the SQLite file behind ``engine``, or ``None`` for PostgreSQL and ``:memory:``."""
+    if engine.dialect.name != "sqlite":
+        return None
+    database = engine.url.database
+    return None if not database or database == ":memory:" else Path(database)
+
+
 def _free_space_bytes(engine: Engine) -> int | None:
     try:
         if engine.dialect.name == "sqlite":
-            database = engine.url.database
-            if not database or database == ":memory:":
+            database = _sqlite_file(engine)
+            if database is None:
                 return None
-            target = Path(database).parent
+            target = database.parent
         else:
             # No local path for a remote PostgreSQL server; report on the current process's own
             # filesystem as the best available proxy — an application that needs the *server's*
@@ -194,33 +198,23 @@ def _free_space_bytes(engine: Engine) -> int | None:
 
 
 def _last_backup_age_seconds(engine: Engine, *, now: float) -> float | None:
-    if engine.dialect.name != "sqlite":
+    database = _sqlite_file(engine)
+    if database is None or not (database.parent / "backups").is_dir():
         return None
-    database = engine.url.database
-    if not database or database == ":memory:":
-        return None
-    backups_directory = Path(database).parent / "backups"
-    if not backups_directory.is_dir():
-        return None
-    newest: float | None = None
-    for candidate in backups_directory.iterdir():
-        if not candidate.is_file():
-            continue
-        mtime = candidate.stat().st_mtime
-        if newest is None or mtime > newest:
-            newest = mtime
-    if newest is None:
-        return None
-    return max(0.0, now - newest)
+    newest = max(
+        (
+            candidate.stat().st_mtime
+            for candidate in (database.parent / "backups").iterdir()
+            if candidate.is_file()
+        ),
+        default=None,
+    )
+    return None if newest is None else max(0.0, now - newest)
 
 
 def _network_filesystem_for(engine: Engine) -> bool | None:
-    if engine.dialect.name != "sqlite":
-        return None
-    database = engine.url.database
-    if not database or database == ":memory:":
-        return None
-    return is_network_filesystem(Path(database))
+    database = _sqlite_file(engine)
+    return None if database is None else is_network_filesystem(database)
 
 
 def database_health(engine: Engine, runner: MigrationRunner | None = None) -> DatabaseHealth:

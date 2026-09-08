@@ -163,25 +163,18 @@ def upsert(
         raise ValueError("upsert() requires at least one column in `values`.")
 
     dialect_name = session.get_bind().dialect.name
+    statement: sqlite.Insert | postgresql.Insert
     if dialect_name == "sqlite":
-        sqlite_insert = sqlite.insert(model).values(**values)
-        session.execute(
-            sqlite_insert.on_conflict_do_update(
-                index_elements=index_elements,
-                set_={key: sqlite_insert.excluded[key] for key in values if key not in no_update},
-            )
-        )
+        statement = sqlite.insert(model).values(**values)
     elif dialect_name == "postgresql":
-        postgresql_insert = postgresql.insert(model).values(**values)
-        session.execute(
-            postgresql_insert.on_conflict_do_update(
-                index_elements=index_elements,
-                set_={
-                    key: postgresql_insert.excluded[key] for key in values if key not in no_update
-                },
-            )
-        )
+        statement = postgresql.insert(model).values(**values)
     else:
         raise ValueError(
             f"upsert() supports sqlite and postgresql only; got dialect {dialect_name!r}."
         )
+    session.execute(
+        statement.on_conflict_do_update(
+            index_elements=index_elements,
+            set_={key: statement.excluded[key] for key in values if key not in no_update},
+        )
+    )
